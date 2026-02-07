@@ -1,0 +1,592 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Gemini 3.0 Pro: Portfolio Manager</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+    <style>
+        body { font-family: 'Helvetica Neue', Arial, sans-serif; }
+        ::-webkit-scrollbar { width: 8px; height: 8px; }
+        ::-webkit-scrollbar-track { background: #1f2937; }
+        ::-webkit-scrollbar-thumb { background: #4b5563; border-radius: 4px; }
+        ::-webkit-scrollbar-thumb:hover { background: #6b7280; }
+        .tab-active { border-bottom: 2px solid #3b82f6; color: #60a5fa; }
+        .tab-inactive { color: #9ca3af; }
+        /* Smooth details transition attempt */
+        details > summary { list-style: none; }
+        details > summary::-webkit-details-marker { display: none; }
+    </style>
+</head>
+<body class="bg-gray-900 text-gray-200 h-screen flex flex-col overflow-hidden">
+
+    <!-- Header -->
+    <header class="bg-gray-800 border-b border-gray-700 h-16 flex items-center justify-between px-6 shrink-0 z-20 shadow-md">
+        <div class="flex items-center gap-3">
+            <i class="fa-solid fa-chart-line text-blue-500 text-xl"></i>
+            <h1 class="text-xl font-bold text-transparent bg-clip-text bg-gradient-to-r from-blue-400 to-emerald-400">
+                Gemini Portfolio Manager
+            </h1>
+        </div>
+        <div class="text-xs text-gray-500 hidden md:block">
+            Browser Local Storage
+        </div>
+    </header>
+
+    <!-- Main Layout -->
+    <div class="flex flex-1 overflow-hidden">
+        
+        <!-- Sidebar -->
+        <aside class="w-80 bg-gray-850 border-r border-gray-700 flex flex-col shrink-0 z-10">
+            <!-- Tab Switcher -->
+            <div class="flex border-b border-gray-700 bg-gray-800">
+                <button onclick="switchTab('prompt')" id="tab-prompt" class="flex-1 py-3 text-sm font-bold transition-colors tab-active">
+                    <i class="fa-solid fa-code mr-1"></i> Prompts
+                </button>
+                <button onclick="switchTab('portfolio')" id="tab-portfolio" class="flex-1 py-3 text-sm font-bold transition-colors tab-inactive">
+                    <i class="fa-solid fa-briefcase mr-1"></i> Portfolios
+                </button>
+            </div>
+
+            <!-- Action Button -->
+            <div class="p-4 border-b border-gray-700">
+                <button onclick="createNew()" id="createBtn" class="w-full flex items-center justify-center gap-2 bg-blue-600 hover:bg-blue-500 text-white py-2 rounded-lg transition-colors text-sm font-bold shadow-lg shadow-blue-900/20">
+                    <i class="fa-solid fa-plus"></i> 新規作成
+                </button>
+            </div>
+
+            <!-- List -->
+            <div class="flex-1 overflow-y-auto p-2 space-y-1" id="itemList"></div>
+        </aside>
+
+        <!-- Main Content -->
+        <main class="flex-1 flex flex-col bg-gray-900 relative w-full overflow-hidden">
+            
+            <!-- Editor Header -->
+            <div class="bg-gray-800/50 p-4 border-b border-gray-700 flex items-center justify-between backdrop-blur-sm shrink-0">
+                <div class="flex-1 mr-4">
+                    <input type="text" id="inputTitle" class="bg-transparent border-none text-xl font-bold text-white focus:ring-0 w-full placeholder-gray-600" placeholder="タイトル...">
+                    <div class="text-xs text-gray-500 mt-1" id="lastUpdated">Updated: -</div>
+                </div>
+                <div class="flex gap-2">
+                    <button onclick="saveCurrentItem()" class="bg-blue-600 hover:bg-blue-500 text-white px-4 py-2 rounded-lg text-sm font-bold shadow-lg">
+                        <i class="fa-regular fa-floppy-disk mr-1"></i> 保存
+                    </button>
+                    <button onclick="deleteCurrentItem()" class="bg-red-900/50 hover:bg-red-800 text-red-200 px-3 py-2 rounded-lg text-sm border border-red-900">
+                        <i class="fa-regular fa-trash-can"></i>
+                    </button>
+                </div>
+            </div>
+
+            <!-- Content Area Switcher -->
+            <div class="flex-1 relative overflow-hidden">
+                
+                <!-- 1. Prompt Editor View -->
+                <div id="view-prompt" class="absolute inset-0 flex flex-col hidden">
+                    <div class="flex justify-end p-2 bg-gray-800/30">
+                        <button onclick="copyContent()" class="text-xs bg-gray-700 hover:bg-gray-600 text-gray-300 px-3 py-1 rounded">
+                            <i class="fa-regular fa-copy mr-1"></i> コピー
+                        </button>
+                    </div>
+                    <textarea id="inputContent" class="flex-1 w-full bg-gray-900 text-gray-300 p-6 resize-none focus:outline-none font-mono text-sm leading-relaxed" placeholder="ここにプロンプトを入力..."></textarea>
+                </div>
+
+                <!-- 2. Portfolio View -->
+                <div id="view-portfolio" class="absolute inset-0 flex flex-col hidden overflow-hidden">
+                    
+                    <!-- Import Section (Show if empty) -->
+                    <div id="portfolio-importer" class="hidden absolute inset-0 z-20 bg-gray-900 p-8 flex flex-col items-center justify-center">
+                        <div class="max-w-2xl w-full space-y-4 text-center">
+                            <div class="w-16 h-16 bg-gray-800 rounded-full flex items-center justify-center mx-auto text-emerald-500 text-2xl mb-4">
+                                <i class="fa-solid fa-file-import"></i>
+                            </div>
+                            <h3 class="text-xl font-bold text-white">Geminiの分析結果を取り込む</h3>
+                            <p class="text-gray-400 text-sm">Geminiが出力したマークダウンの表（推奨ポートフォリオ）をここに貼り付けてください。<br>自動的に銘柄を解析してリスト化します。</p>
+                            <textarea id="importText" class="w-full h-48 bg-gray-800 border border-gray-700 rounded-lg p-4 text-sm font-mono focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 outline-none transition-colors" placeholder="| 順位 | コード | 銘柄名 | 現在株価 | ..."></textarea>
+                            <button onclick="importPortfolio()" class="w-full bg-emerald-600 hover:bg-emerald-500 text-white py-3 rounded-lg font-bold shadow-lg transition-colors">
+                                解析して登録
+                            </button>
+                        </div>
+                    </div>
+
+                    <!-- Portfolio Dashboard -->
+                    <div id="portfolio-dashboard" class="flex-1 flex flex-col h-full overflow-hidden">
+                        <!-- Stats Bar -->
+                        <div class="bg-gray-800 border-b border-gray-700 p-4 flex gap-6 text-sm shrink-0">
+                            <div>
+                                <span class="text-gray-500 block text-xs uppercase">投資総額</span>
+                                <span class="font-bold text-lg" id="total-investment">¥0</span>
+                            </div>
+                            <div>
+                                <span class="text-gray-500 block text-xs uppercase">現在評価額 (売却含)</span>
+                                <span class="font-bold text-lg" id="total-value">¥0</span>
+                            </div>
+                            <div>
+                                <span class="text-gray-500 block text-xs uppercase">損益合計</span>
+                                <span class="font-bold text-lg" id="total-pl">¥0</span>
+                            </div>
+                        </div>
+
+                        <!-- Stock List -->
+                        <div class="flex-1 overflow-y-auto p-4 space-y-4 bg-gray-900/50" id="stock-list">
+                            <!-- Stock Cards injected here -->
+                        </div>
+                        
+                        <!-- Add manual stock button -->
+                         <div class="p-2 bg-gray-800 border-t border-gray-700 text-center">
+                             <button onclick="showImportModal()" class="text-xs text-blue-400 hover:text-blue-300">
+                                 <i class="fa-solid fa-plus mr-1"></i> Geminiの結果を追加で取り込む
+                             </button>
+                         </div>
+                    </div>
+                </div>
+
+            </div>
+        </main>
+    </div>
+
+    <!-- Toast -->
+    <div id="toast" class="fixed bottom-6 right-6 translate-y-20 opacity-0 transition-all duration-300 z-50 bg-gray-800 border border-emerald-500/50 text-white px-6 py-3 rounded-lg shadow-2xl flex items-center gap-3">
+        <i class="fa-solid fa-check-circle text-emerald-500"></i>
+        <span id="toastMsg">Saved</span>
+    </div>
+
+    <script>
+        // --- Configuration & Default Data ---
+        const STORAGE_KEY = 'gemini_portfolio_manager_v2';
+        const DEFAULT_PROMPT = `# Role: Senior Deep Value Analyst (Japan Equity Specialist)
+## Task Definition
+ユーザーから提供された日本株銘柄リストに対し、清原達郎氏の投資哲学に基づく分析を実行せよ。
+
+## Output Format
+以下のMarkdownテーブル形式で出力すること:
+| 順位 | コード | 銘柄名 | 現在株価 | 目標株価 | ...
+`;
+
+        // --- State ---
+        let items = [];
+        let currentTab = 'prompt'; // 'prompt' | 'portfolio'
+        let currentId = null;
+
+        // --- Initialization ---
+        document.addEventListener('DOMContentLoaded', () => {
+            loadItems();
+            
+            // Migration for v1 data if exists (simple check)
+            if (items.length > 0 && !items[0].stocks) {
+                items.forEach(i => { if(i.type === 'result') i.type = 'portfolio'; });
+            }
+
+            if (items.length === 0) {
+                createNewPrompt(); // Default first item
+            } else {
+                // Select first item of current tab or any
+                const first = items.find(i => i.type === 'prompt') || items[0];
+                if(first) {
+                    currentTab = first.type;
+                    updateTabUI();
+                    selectItem(first.id);
+                }
+            }
+            renderList();
+        });
+
+        // --- Core Functions ---
+        function loadItems() {
+            const stored = localStorage.getItem(STORAGE_KEY);
+            if (stored) items = JSON.parse(stored);
+        }
+
+        function saveToStorage() {
+            localStorage.setItem(STORAGE_KEY, JSON.stringify(items));
+        }
+
+        function switchTab(tab) {
+            currentTab = tab;
+            currentId = null;
+            updateTabUI();
+            renderList();
+            
+            // Clear editor view until selection
+            document.getElementById('inputTitle').value = '';
+            document.getElementById('view-prompt').classList.add('hidden');
+            document.getElementById('view-portfolio').classList.add('hidden');
+        }
+
+        function updateTabUI() {
+            const tPrompt = document.getElementById('tab-prompt');
+            const tPort = document.getElementById('tab-portfolio');
+            
+            if (currentTab === 'prompt') {
+                tPrompt.className = 'flex-1 py-3 text-sm font-bold transition-colors tab-active';
+                tPort.className = 'flex-1 py-3 text-sm font-bold transition-colors tab-inactive';
+            } else {
+                tPrompt.className = 'flex-1 py-3 text-sm font-bold transition-colors tab-inactive';
+                tPort.className = 'flex-1 py-3 text-sm font-bold transition-colors tab-active';
+            }
+        }
+
+        function renderList() {
+            const container = document.getElementById('itemList');
+            container.innerHTML = '';
+            
+            const filtered = items.filter(i => i.type === currentTab)
+                .sort((a, b) => new Date(b.updatedAt) - new Date(a.updatedAt));
+
+            filtered.forEach(item => {
+                const isSelected = item.id === currentId;
+                const div = document.createElement('div');
+                div.className = `p-3 rounded-lg cursor-pointer border transition-all mb-1 ${
+                    isSelected ? 'bg-gray-700 border-gray-600' : 'hover:bg-gray-800 border-transparent'
+                }`;
+                div.onclick = () => selectItem(item.id);
+
+                const icon = currentTab === 'prompt' 
+                    ? '<i class="fa-solid fa-file-code text-blue-400"></i>'
+                    : '<i class="fa-solid fa-chart-pie text-emerald-400"></i>';
+
+                div.innerHTML = `
+                    <div class="flex items-center gap-3">
+                        <div class="opacity-80">${icon}</div>
+                        <div class="min-w-0">
+                            <h4 class="text-sm font-bold truncate ${isSelected?'text-white':'text-gray-300'}">${item.title}</h4>
+                            <p class="text-xs text-gray-500">${new Date(item.updatedAt).toLocaleDateString()}</p>
+                        </div>
+                    </div>
+                `;
+                container.appendChild(div);
+            });
+        }
+
+        function selectItem(id) {
+            currentId = id;
+            const item = items.find(i => i.id === id);
+            if (!item) return;
+
+            document.getElementById('inputTitle').value = item.title;
+            document.getElementById('lastUpdated').textContent = `Updated: ${new Date(item.updatedAt).toLocaleString()}`;
+            
+            renderList(); // Update selection style
+
+            if (currentTab === 'prompt') {
+                document.getElementById('view-prompt').classList.remove('hidden');
+                document.getElementById('view-portfolio').classList.add('hidden');
+                document.getElementById('inputContent').value = item.content || '';
+            } else {
+                document.getElementById('view-prompt').classList.add('hidden');
+                document.getElementById('view-portfolio').classList.remove('hidden');
+                renderPortfolio(item);
+            }
+        }
+
+        function createNew() {
+            if (currentTab === 'prompt') createNewPrompt();
+            else createNewPortfolio();
+        }
+
+        function createNewPrompt() {
+            const newItem = {
+                id: Date.now().toString(),
+                type: 'prompt',
+                title: '新規プロンプト',
+                content: DEFAULT_PROMPT,
+                updatedAt: new Date().toISOString()
+            };
+            items.unshift(newItem);
+            saveToStorage();
+            selectItem(newItem.id);
+            renderList();
+        }
+
+        function createNewPortfolio() {
+            const newItem = {
+                id: Date.now().toString(),
+                type: 'portfolio',
+                title: '新規ポートフォリオ',
+                stocks: [], // Array of { code, name, price, target, note, buyPrice, quantity, sellPrice, links, note }
+                updatedAt: new Date().toISOString()
+            };
+            items.unshift(newItem);
+            saveToStorage();
+            selectItem(newItem.id);
+            renderList();
+        }
+
+        function saveCurrentItem() {
+            if (!currentId) return;
+            const item = items.find(i => i.id === currentId);
+            
+            item.title = document.getElementById('inputTitle').value;
+            item.updatedAt = new Date().toISOString();
+
+            if (currentTab === 'prompt') {
+                item.content = document.getElementById('inputContent').value;
+            } else {
+                // Portfolio data is saved in real-time on input change
+            }
+
+            // Re-order
+            items = items.filter(i => i.id !== currentId);
+            items.unshift(item);
+            
+            saveToStorage();
+            renderList();
+            showToast('保存しました');
+        }
+
+        function deleteCurrentItem() {
+            if (!currentId || !confirm('削除しますか？')) return;
+            items = items.filter(i => i.id !== currentId);
+            saveToStorage();
+            currentId = null;
+            renderList();
+            
+            // Clear view
+            document.getElementById('inputTitle').value = '';
+            document.getElementById('view-prompt').classList.add('hidden');
+            document.getElementById('view-portfolio').classList.add('hidden');
+        }
+
+        // --- Portfolio Logic ---
+
+        function generateLinkButtons(text) {
+            if (!text) return '';
+            // Regex to find URLs
+            const urlRegex = /(https?:\/\/[^\s\n]+)/g;
+            const urls = text.match(urlRegex);
+            
+            if (!urls) return '';
+
+            return urls.map(url => {
+                // Try to create a nice label
+                let label = 'Link';
+                try {
+                    const urlObj = new URL(url);
+                    label = urlObj.hostname.replace('www.', '');
+                } catch(e) {}
+
+                return `
+                    <a href="${url}" target="_blank" class="inline-flex items-center gap-1 bg-gray-700 hover:bg-gray-600 border border-gray-600 text-blue-300 text-xs px-2 py-1 rounded transition-colors" title="${url}">
+                        <i class="fa-solid fa-up-right-from-square text-[10px]"></i> ${label}
+                    </a>
+                `;
+            }).join('');
+        }
+
+        function renderPortfolio(item) {
+            const dashboard = document.getElementById('portfolio-dashboard');
+            const importer = document.getElementById('portfolio-importer');
+            const listContainer = document.getElementById('stock-list');
+
+            if (!item.stocks || item.stocks.length === 0) {
+                dashboard.classList.add('hidden');
+                importer.classList.remove('hidden');
+                document.getElementById('importText').value = '';
+                return;
+            }
+
+            dashboard.classList.remove('hidden');
+            importer.classList.add('hidden');
+            listContainer.innerHTML = '';
+
+            let totalInvest = 0;
+            let totalVal = 0;
+
+            item.stocks.forEach((stock, index) => {
+                const currentPrice = parseFloat(stock.currentPrice) || 0;
+                const buyPrice = parseFloat(stock.buyPrice) || 0;
+                const quantity = parseFloat(stock.quantity) || 0;
+                const sellPrice = parseFloat(stock.sellPrice) || 0;
+
+                const isSold = sellPrice > 0;
+                const investment = buyPrice * quantity;
+                
+                let currentValue = 0;
+                let pl = 0;
+                let plClass = 'text-gray-400';
+
+                if (quantity > 0) {
+                    if (isSold) {
+                        currentValue = sellPrice * quantity; // Cash back
+                    } else {
+                        currentValue = currentPrice * quantity; // Unrealized
+                    }
+                    pl = currentValue - investment;
+                    plClass = pl >= 0 ? 'text-emerald-400' : 'text-red-400';
+                    
+                    totalInvest += investment;
+                    totalVal += currentValue;
+                }
+
+                // Generate Link Buttons
+                const linkButtons = generateLinkButtons(stock.links);
+
+                // Card HTML
+                const card = document.createElement('div');
+                card.className = `bg-gray-800 rounded-lg p-4 border ${isSold ? 'border-gray-700 opacity-80' : 'border-gray-600'}`;
+                
+                card.innerHTML = `
+                    <div class="flex justify-between items-start mb-3">
+                        <div>
+                            <div class="flex items-center gap-2">
+                                <span class="bg-gray-700 text-xs px-2 py-0.5 rounded font-mono">${stock.code}</span>
+                                <h3 class="font-bold text-lg text-white">${stock.name}</h3>
+                                ${isSold ? '<span class="bg-blue-900 text-blue-200 text-xs px-2 py-0.5 rounded">売却済</span>' : ''}
+                            </div>
+                            <div class="text-xs text-gray-400 mt-1">
+                                現在値: <span class="font-mono text-white">${currentPrice.toLocaleString()}</span> / 目標: <span class="font-mono text-emerald-300">${stock.targetPrice}</span>
+                            </div>
+                        </div>
+                        <button onclick="removeStock(${index})" class="text-gray-600 hover:text-red-400 transition-colors">
+                            <i class="fa-solid fa-xmark"></i>
+                        </button>
+                    </div>
+
+                    <div class="grid grid-cols-3 gap-3 mb-3">
+                        <div>
+                            <label class="text-[10px] text-gray-500 uppercase block">購入単価</label>
+                            <input type="number" value="${stock.buyPrice || ''}" onchange="updateStock(${index}, 'buyPrice', this.value)" class="w-full bg-gray-900 border border-gray-700 rounded px-2 py-1 text-sm font-mono focus:border-blue-500 outline-none text-right" placeholder="0">
+                        </div>
+                        <div>
+                            <label class="text-[10px] text-gray-500 uppercase block">保有株数</label>
+                            <input type="number" value="${stock.quantity || ''}" onchange="updateStock(${index}, 'quantity', this.value)" class="w-full bg-gray-900 border border-gray-700 rounded px-2 py-1 text-sm font-mono focus:border-blue-500 outline-none text-right" placeholder="0">
+                        </div>
+                        <div>
+                            <label class="text-[10px] text-gray-500 uppercase block">売却単価 (任意)</label>
+                            <input type="number" value="${stock.sellPrice || ''}" onchange="updateStock(${index}, 'sellPrice', this.value)" class="w-full bg-gray-900 border border-gray-700 rounded px-2 py-1 text-sm font-mono focus:border-blue-500 outline-none text-right text-yellow-300" placeholder="-">
+                        </div>
+                    </div>
+
+                    ${quantity > 0 ? `
+                    <div class="flex justify-between items-center bg-gray-900/50 p-2 rounded text-sm mb-3">
+                        <span class="text-xs text-gray-500">損益 (P/L)</span>
+                        <span class="font-bold font-mono ${plClass}">
+                            ${pl > 0 ? '+' : ''}${pl.toLocaleString()}
+                        </span>
+                    </div>
+                    ` : ''}
+
+                    <!-- Details: Memo & Links -->
+                    <details class="mt-2 border-t border-gray-700 pt-2 group">
+                        <summary class="cursor-pointer text-xs text-blue-400 hover:text-blue-300 flex items-center gap-2 select-none focus:outline-none">
+                            <i class="fa-solid fa-chevron-right text-[10px] group-open:rotate-90 transition-transform"></i>
+                            <i class="fa-solid fa-pen-to-square"></i> メモ・関連リンク
+                        </summary>
+                        <div class="mt-3 space-y-3 pl-1">
+                            <!-- Memo -->
+                            <div>
+                                <label class="text-[10px] text-gray-500 uppercase block mb-1">メモ (Note)</label>
+                                <textarea onchange="updateStock(${index}, 'note', this.value)" class="w-full bg-gray-900/80 border border-gray-700 rounded p-2 text-sm text-gray-300 focus:border-blue-500 focus:ring-1 focus:ring-blue-500 outline-none transition-colors" rows="2" placeholder="投資判断の理由、決算日など...">${stock.note || ''}</textarea>
+                            </div>
+                            <!-- Links -->
+                            <div>
+                                <label class="text-[10px] text-gray-500 uppercase block mb-1">関連リンク (改行区切りでURLを入力)</label>
+                                <textarea onchange="updateStock(${index}, 'links', this.value)" class="w-full bg-gray-900/80 border border-gray-700 rounded p-2 text-sm text-gray-300 font-mono focus:border-blue-500 focus:ring-1 focus:ring-blue-500 outline-none transition-colors" rows="2" placeholder="https://...">${stock.links || ''}</textarea>
+                                ${linkButtons ? `<div class="mt-2 flex flex-wrap gap-2">${linkButtons}</div>` : ''}
+                            </div>
+                        </div>
+                    </details>
+                `;
+                listContainer.appendChild(card);
+            });
+
+            // Update Total Stats
+            const totalPl = totalVal - totalInvest;
+            document.getElementById('total-investment').textContent = `¥${totalInvest.toLocaleString()}`;
+            document.getElementById('total-value').textContent = `¥${totalVal.toLocaleString()}`;
+            
+            const plEl = document.getElementById('total-pl');
+            plEl.textContent = `¥${totalPl.toLocaleString()}`;
+            plEl.className = `font-bold text-lg ${totalPl >= 0 ? 'text-emerald-400' : 'text-red-400'}`;
+        }
+
+        function showImportModal() {
+            document.getElementById('portfolio-dashboard').classList.add('hidden');
+            document.getElementById('portfolio-importer').classList.remove('hidden');
+        }
+
+        function importPortfolio() {
+            const text = document.getElementById('importText').value;
+            if (!text.trim()) return;
+
+            const lines = text.split('\n').filter(line => line.trim().startsWith('|'));
+            let codeIdx = 1, nameIdx = 2, priceIdx = 3, targetIdx = 4;
+            const dataRows = lines.filter(line => !line.includes('---') && !line.includes('順位'));
+
+            const newStocks = dataRows.map(row => {
+                const cols = row.split('|').map(c => c.trim()).filter(c => c !== '');
+                if (cols.length < 3) return null;
+
+                const priceStr = cols[priceIdx-1] || '0';
+                const priceVal = parseFloat(priceStr.replace(/[^0-9.]/g, ''));
+
+                return {
+                    code: cols[codeIdx-1] || '????',
+                    name: cols[nameIdx-1] || 'Unknown',
+                    currentPrice: priceVal,
+                    targetPrice: cols[targetIdx-1] || '-',
+                    buyPrice: 0,
+                    quantity: 0,
+                    sellPrice: 0,
+                    note: '',
+                    links: ''
+                };
+            }).filter(s => s !== null);
+
+            if (newStocks.length === 0) {
+                alert('銘柄を検出できませんでした。Markdownの表形式を確認してください。');
+                return;
+            }
+
+            const item = items.find(i => i.id === currentId);
+            if (!item.stocks) item.stocks = [];
+            item.stocks = [...item.stocks, ...newStocks];
+            
+            saveToStorage();
+            renderPortfolio(item);
+        }
+
+        function updateStock(index, field, value) {
+            const item = items.find(i => i.id === currentId);
+            item.stocks[index][field] = value;
+            saveToStorage();
+            
+            // Re-render only if necessary (typing in textarea shouldn't lose focus, but for now simple re-render to update stats/links)
+            // Ideally we should debounce or update DOM directly, but re-render is safer for state consistency
+            // To keep focus, we check if element is active. 
+            // Actually, for textarea, re-rendering will lose focus. 
+            // Let's optimize: if field is note or links, don't re-render immediately unless link preview update is needed.
+            // For simplicity in this v2, we re-render. User clicks out to save/update view.
+            if (field === 'note' || field === 'links') {
+                // Do nothing UI wise, just saved. Render on blur? 
+                // Currently onchange fires on blur. So it is fine.
+                renderPortfolio(item); 
+            } else {
+                renderPortfolio(item);
+            }
+        }
+
+        function removeStock(index) {
+            if(!confirm('この銘柄をリストから削除しますか？')) return;
+            const item = items.find(i => i.id === currentId);
+            item.stocks.splice(index, 1);
+            saveToStorage();
+            renderPortfolio(item);
+        }
+
+        function showToast(msg) {
+            const t = document.getElementById('toast');
+            document.getElementById('toastMsg').textContent = msg;
+            t.classList.remove('translate-y-20', 'opacity-0');
+            setTimeout(() => t.classList.add('translate-y-20', 'opacity-0'), 2000);
+        }
+
+        function copyContent() {
+            navigator.clipboard.writeText(document.getElementById('inputContent').value)
+                .then(() => showToast('Copied'));
+        }
+
+    </script>
+</body>
+</html>
