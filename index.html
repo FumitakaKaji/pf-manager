@@ -12,8 +12,9 @@
         ::-webkit-scrollbar-track { background: #1f2937; }
         ::-webkit-scrollbar-thumb { background: #4b5563; border-radius: 4px; }
         ::-webkit-scrollbar-thumb:hover { background: #6b7280; }
-        .tab-active { border-bottom: 2px solid #3b82f6; color: #60a5fa; }
+        .tab-active { border-bottom: 2px solid #3b82f6; color: #60a5fa; background: rgba(31, 41, 55, 0.5); }
         .tab-inactive { color: #9ca3af; }
+        .tab-inactive:hover { color: #e5e7eb; background: rgba(31, 41, 55, 0.3); }
         /* Smooth details transition attempt */
         details > summary { list-style: none; }
         details > summary::-webkit-details-marker { display: none; }
@@ -24,7 +25,7 @@
     <!-- Header -->
     <header class="bg-gray-800 border-b border-gray-700 h-16 flex items-center justify-between px-6 shrink-0 z-20 shadow-md">
         <div class="flex items-center gap-3">
-            <i class="fa-solid fa-chart-line text-blue-500 text-xl"></i>
+            <i class="fa-solid fa-layer-group text-blue-500 text-xl"></i>
             <h1 class="text-xl font-bold text-transparent bg-clip-text bg-gradient-to-r from-blue-400 to-emerald-400">
                 Gemini Portfolio Manager
             </h1>
@@ -41,11 +42,14 @@
         <aside class="w-80 bg-gray-850 border-r border-gray-700 flex flex-col shrink-0 z-10">
             <!-- Tab Switcher -->
             <div class="flex border-b border-gray-700 bg-gray-800">
-                <button onclick="switchTab('prompt')" id="tab-prompt" class="flex-1 py-3 text-sm font-bold transition-colors tab-active">
-                    <i class="fa-solid fa-code mr-1"></i> Prompts
+                <button onclick="switchTab('prompt')" id="tab-prompt" class="flex-1 py-3 text-xs md:text-sm font-bold transition-colors tab-active" title="Prompts">
+                    <i class="fa-solid fa-code mr-1"></i> <span class="hidden sm:inline">Prompts</span>
                 </button>
-                <button onclick="switchTab('portfolio')" id="tab-portfolio" class="flex-1 py-3 text-sm font-bold transition-colors tab-inactive">
-                    <i class="fa-solid fa-briefcase mr-1"></i> Portfolios
+                <button onclick="switchTab('portfolio')" id="tab-portfolio" class="flex-1 py-3 text-xs md:text-sm font-bold transition-colors tab-inactive" title="Portfolios">
+                    <i class="fa-solid fa-briefcase mr-1"></i> <span class="hidden sm:inline">Portfolios</span>
+                </button>
+                <button onclick="switchTab('links')" id="tab-links" class="flex-1 py-3 text-xs md:text-sm font-bold transition-colors tab-inactive" title="Links">
+                    <i class="fa-solid fa-link mr-1"></i> <span class="hidden sm:inline">Links</span>
                 </button>
             </div>
 
@@ -71,7 +75,7 @@
                 </div>
                 <div class="flex gap-2">
                     <button onclick="saveCurrentItem()" class="bg-blue-600 hover:bg-blue-500 text-white px-4 py-2 rounded-lg text-sm font-bold shadow-lg">
-                        <i class="fa-regular fa-floppy-disk mr-1"></i> 保存
+                        <i class="fa-regular fa-floppy-disk mr-1"></i> <span class="hidden sm:inline">保存</span>
                     </button>
                     <button onclick="deleteCurrentItem()" class="bg-red-900/50 hover:bg-red-800 text-red-200 px-3 py-2 rounded-lg text-sm border border-red-900">
                         <i class="fa-regular fa-trash-can"></i>
@@ -142,6 +146,18 @@
                     </div>
                 </div>
 
+                <!-- 3. Links View -->
+                <div id="view-links" class="absolute inset-0 flex flex-col hidden overflow-hidden">
+                    <div class="p-4 border-b border-gray-700 bg-gray-800 flex justify-end">
+                        <button onclick="addNewLinkRow()" class="flex items-center gap-2 bg-indigo-600 hover:bg-indigo-500 text-white px-4 py-2 rounded-lg text-sm font-bold shadow-lg transition-colors">
+                            <i class="fa-solid fa-plus"></i> リンクを追加
+                        </button>
+                    </div>
+                    <div id="links-list" class="flex-1 overflow-y-auto p-4 space-y-3 bg-gray-900">
+                        <!-- Link Items injected here -->
+                    </div>
+                </div>
+
             </div>
         </main>
     </div>
@@ -154,7 +170,7 @@
 
     <script>
         // --- Configuration & Default Data ---
-        const STORAGE_KEY = 'gemini_portfolio_manager_v2';
+        const STORAGE_KEY = 'gemini_portfolio_manager_v3';
         const DEFAULT_PROMPT = `# Role: Senior Deep Value Analyst (Japan Equity Specialist)
 ## Task Definition
 ユーザーから提供された日本株銘柄リストに対し、清原達郎氏の投資哲学に基づく分析を実行せよ。
@@ -166,22 +182,21 @@
 
         // --- State ---
         let items = [];
-        let currentTab = 'prompt'; // 'prompt' | 'portfolio'
+        let currentTab = 'prompt'; // 'prompt' | 'portfolio' | 'links'
         let currentId = null;
 
         // --- Initialization ---
         document.addEventListener('DOMContentLoaded', () => {
             loadItems();
             
-            // Migration for v1 data if exists (simple check)
-            if (items.length > 0 && !items[0].stocks) {
-                items.forEach(i => { if(i.type === 'result') i.type = 'portfolio'; });
+            // Migration check
+            if (items.length > 0 && !items[0].stocks && !items[0].linkItems) {
+                // Ensure proper structure if upgrading from older version
             }
 
             if (items.length === 0) {
-                createNewPrompt(); // Default first item
+                createNewPrompt(); 
             } else {
-                // Select first item of current tab or any
                 const first = items.find(i => i.type === 'prompt') || items[0];
                 if(first) {
                     currentTab = first.type;
@@ -212,19 +227,18 @@
             document.getElementById('inputTitle').value = '';
             document.getElementById('view-prompt').classList.add('hidden');
             document.getElementById('view-portfolio').classList.add('hidden');
+            document.getElementById('view-links').classList.add('hidden');
         }
 
         function updateTabUI() {
-            const tPrompt = document.getElementById('tab-prompt');
-            const tPort = document.getElementById('tab-portfolio');
-            
-            if (currentTab === 'prompt') {
-                tPrompt.className = 'flex-1 py-3 text-sm font-bold transition-colors tab-active';
-                tPort.className = 'flex-1 py-3 text-sm font-bold transition-colors tab-inactive';
-            } else {
-                tPrompt.className = 'flex-1 py-3 text-sm font-bold transition-colors tab-inactive';
-                tPort.className = 'flex-1 py-3 text-sm font-bold transition-colors tab-active';
-            }
+            ['prompt', 'portfolio', 'links'].forEach(t => {
+                const btn = document.getElementById(`tab-${t}`);
+                if (currentTab === t) {
+                    btn.className = 'flex-1 py-3 text-xs md:text-sm font-bold transition-colors tab-active';
+                } else {
+                    btn.className = 'flex-1 py-3 text-xs md:text-sm font-bold transition-colors tab-inactive';
+                }
+            });
         }
 
         function renderList() {
@@ -242,13 +256,23 @@
                 }`;
                 div.onclick = () => selectItem(item.id);
 
-                const icon = currentTab === 'prompt' 
-                    ? '<i class="fa-solid fa-file-code text-blue-400"></i>'
-                    : '<i class="fa-solid fa-chart-pie text-emerald-400"></i>';
+                let icon = '';
+                let colorClass = '';
+                
+                if (currentTab === 'prompt') {
+                    icon = '<i class="fa-solid fa-file-code"></i>';
+                    colorClass = 'text-blue-400';
+                } else if (currentTab === 'portfolio') {
+                    icon = '<i class="fa-solid fa-chart-pie"></i>';
+                    colorClass = 'text-emerald-400';
+                } else {
+                    icon = '<i class="fa-solid fa-link"></i>';
+                    colorClass = 'text-indigo-400';
+                }
 
                 div.innerHTML = `
                     <div class="flex items-center gap-3">
-                        <div class="opacity-80">${icon}</div>
+                        <div class="${colorClass} opacity-80">${icon}</div>
                         <div class="min-w-0">
                             <h4 class="text-sm font-bold truncate ${isSelected?'text-white':'text-gray-300'}">${item.title}</h4>
                             <p class="text-xs text-gray-500">${new Date(item.updatedAt).toLocaleDateString()}</p>
@@ -269,20 +293,27 @@
             
             renderList(); // Update selection style
 
+            // Hide all views
+            document.getElementById('view-prompt').classList.add('hidden');
+            document.getElementById('view-portfolio').classList.add('hidden');
+            document.getElementById('view-links').classList.add('hidden');
+
             if (currentTab === 'prompt') {
                 document.getElementById('view-prompt').classList.remove('hidden');
-                document.getElementById('view-portfolio').classList.add('hidden');
                 document.getElementById('inputContent').value = item.content || '';
-            } else {
-                document.getElementById('view-prompt').classList.add('hidden');
+            } else if (currentTab === 'portfolio') {
                 document.getElementById('view-portfolio').classList.remove('hidden');
                 renderPortfolio(item);
+            } else {
+                document.getElementById('view-links').classList.remove('hidden');
+                renderLinks(item);
             }
         }
 
         function createNew() {
             if (currentTab === 'prompt') createNewPrompt();
-            else createNewPortfolio();
+            else if (currentTab === 'portfolio') createNewPortfolio();
+            else createNewLinks();
         }
 
         function createNewPrompt() {
@@ -294,9 +325,7 @@
                 updatedAt: new Date().toISOString()
             };
             items.unshift(newItem);
-            saveToStorage();
-            selectItem(newItem.id);
-            renderList();
+            saveAndSelect(newItem);
         }
 
         function createNewPortfolio() {
@@ -304,12 +333,31 @@
                 id: Date.now().toString(),
                 type: 'portfolio',
                 title: '新規ポートフォリオ',
-                stocks: [], // Array of { code, name, price, target, note, buyPrice, quantity, sellPrice, links, note }
+                stocks: [],
                 updatedAt: new Date().toISOString()
             };
             items.unshift(newItem);
+            saveAndSelect(newItem);
+        }
+
+        function createNewLinks() {
+            const newItem = {
+                id: Date.now().toString(),
+                type: 'links',
+                title: '新規リンク集',
+                linkItems: [
+                    { title: '四季報オンライン', url: 'https://shikiho.toyokeizai.net/' },
+                    { title: 'Yahoo!ファイナンス', url: 'https://finance.yahoo.co.jp/' }
+                ],
+                updatedAt: new Date().toISOString()
+            };
+            items.unshift(newItem);
+            saveAndSelect(newItem);
+        }
+        
+        function saveAndSelect(item) {
             saveToStorage();
-            selectItem(newItem.id);
+            selectItem(item.id);
             renderList();
         }
 
@@ -323,10 +371,10 @@
             if (currentTab === 'prompt') {
                 item.content = document.getElementById('inputContent').value;
             } else {
-                // Portfolio data is saved in real-time on input change
+                // Portfolio and Links data are saved in real-time on input change
             }
 
-            // Re-order
+            // Re-order to top
             items = items.filter(i => i.id !== currentId);
             items.unshift(item);
             
@@ -346,26 +394,79 @@
             document.getElementById('inputTitle').value = '';
             document.getElementById('view-prompt').classList.add('hidden');
             document.getElementById('view-portfolio').classList.add('hidden');
+            document.getElementById('view-links').classList.add('hidden');
         }
 
-        // --- Portfolio Logic ---
+        // --- Links Logic ---
+        function renderLinks(item) {
+            const container = document.getElementById('links-list');
+            container.innerHTML = '';
+            
+            if (!item.linkItems) item.linkItems = [];
+
+            if (item.linkItems.length === 0) {
+                container.innerHTML = '<div class="text-gray-500 text-center p-8">リンクがありません。<br>"リンクを追加"ボタンを押してください。</div>';
+                return;
+            }
+
+            item.linkItems.forEach((link, index) => {
+                const div = document.createElement('div');
+                div.className = 'bg-gray-800 p-3 rounded-lg flex gap-3 items-center group';
+                div.innerHTML = `
+                    <div class="flex-1 space-y-2">
+                        <input type="text" value="${link.title || ''}" onchange="updateLinkItem(${index}, 'title', this.value)" class="w-full bg-transparent text-white font-bold placeholder-gray-600 focus:outline-none focus:border-b border-gray-600" placeholder="サイト名">
+                        <input type="text" value="${link.url || ''}" onchange="updateLinkItem(${index}, 'url', this.value)" class="w-full bg-transparent text-sm text-blue-300 font-mono placeholder-gray-600 focus:outline-none focus:border-b border-gray-600" placeholder="https://...">
+                    </div>
+                    <div class="flex gap-2">
+                        <a href="${link.url}" target="_blank" class="bg-indigo-600 hover:bg-indigo-500 text-white w-10 h-10 rounded-full flex items-center justify-center transition-colors shadow-lg" title="開く">
+                            <i class="fa-solid fa-arrow-up-right-from-square"></i>
+                        </a>
+                        <button onclick="removeLinkItem(${index})" class="text-gray-600 hover:text-red-400 w-8 h-8 flex items-center justify-center transition-colors">
+                            <i class="fa-solid fa-trash"></i>
+                        </button>
+                    </div>
+                `;
+                container.appendChild(div);
+            });
+        }
+
+        function addNewLinkRow() {
+            const item = items.find(i => i.id === currentId);
+            if (!item.linkItems) item.linkItems = [];
+            item.linkItems.push({ title: '', url: '' });
+            saveToStorage();
+            renderLinks(item);
+        }
+
+        function updateLinkItem(index, field, value) {
+            const item = items.find(i => i.id === currentId);
+            item.linkItems[index][field] = value;
+            saveToStorage();
+            // Don't re-render entire list to keep focus
+        }
+
+        function removeLinkItem(index) {
+            if (!confirm('リンクを削除しますか？')) return;
+            const item = items.find(i => i.id === currentId);
+            item.linkItems.splice(index, 1);
+            saveToStorage();
+            renderLinks(item);
+        }
+
+        // --- Portfolio Logic (Previous) ---
 
         function generateLinkButtons(text) {
             if (!text) return '';
-            // Regex to find URLs
             const urlRegex = /(https?:\/\/[^\s\n]+)/g;
             const urls = text.match(urlRegex);
-            
             if (!urls) return '';
 
             return urls.map(url => {
-                // Try to create a nice label
                 let label = 'Link';
                 try {
                     const urlObj = new URL(url);
                     label = urlObj.hostname.replace('www.', '');
                 } catch(e) {}
-
                 return `
                     <a href="${url}" target="_blank" class="inline-flex items-center gap-1 bg-gray-700 hover:bg-gray-600 border border-gray-600 text-blue-300 text-xs px-2 py-1 rounded transition-colors" title="${url}">
                         <i class="fa-solid fa-up-right-from-square text-[10px]"></i> ${label}
@@ -408,21 +509,18 @@
 
                 if (quantity > 0) {
                     if (isSold) {
-                        currentValue = sellPrice * quantity; // Cash back
+                        currentValue = sellPrice * quantity;
                     } else {
-                        currentValue = currentPrice * quantity; // Unrealized
+                        currentValue = currentPrice * quantity;
                     }
                     pl = currentValue - investment;
                     plClass = pl >= 0 ? 'text-emerald-400' : 'text-red-400';
-                    
                     totalInvest += investment;
                     totalVal += currentValue;
                 }
 
-                // Generate Link Buttons
                 const linkButtons = generateLinkButtons(stock.links);
 
-                // Card HTML
                 const card = document.createElement('div');
                 card.className = `bg-gray-800 rounded-lg p-4 border ${isSold ? 'border-gray-700 opacity-80' : 'border-gray-600'}`;
                 
@@ -467,21 +565,18 @@
                     </div>
                     ` : ''}
 
-                    <!-- Details: Memo & Links -->
                     <details class="mt-2 border-t border-gray-700 pt-2 group">
                         <summary class="cursor-pointer text-xs text-blue-400 hover:text-blue-300 flex items-center gap-2 select-none focus:outline-none">
                             <i class="fa-solid fa-chevron-right text-[10px] group-open:rotate-90 transition-transform"></i>
                             <i class="fa-solid fa-pen-to-square"></i> メモ・関連リンク
                         </summary>
                         <div class="mt-3 space-y-3 pl-1">
-                            <!-- Memo -->
                             <div>
                                 <label class="text-[10px] text-gray-500 uppercase block mb-1">メモ (Note)</label>
-                                <textarea onchange="updateStock(${index}, 'note', this.value)" class="w-full bg-gray-900/80 border border-gray-700 rounded p-2 text-sm text-gray-300 focus:border-blue-500 focus:ring-1 focus:ring-blue-500 outline-none transition-colors" rows="2" placeholder="投資判断の理由、決算日など...">${stock.note || ''}</textarea>
+                                <textarea onchange="updateStock(${index}, 'note', this.value)" class="w-full bg-gray-900/80 border border-gray-700 rounded p-2 text-sm text-gray-300 focus:border-blue-500 focus:ring-1 focus:ring-blue-500 outline-none transition-colors" rows="2" placeholder="メモを入力...">${stock.note || ''}</textarea>
                             </div>
-                            <!-- Links -->
                             <div>
-                                <label class="text-[10px] text-gray-500 uppercase block mb-1">関連リンク (改行区切りでURLを入力)</label>
+                                <label class="text-[10px] text-gray-500 uppercase block mb-1">関連リンク (改行区切り)</label>
                                 <textarea onchange="updateStock(${index}, 'links', this.value)" class="w-full bg-gray-900/80 border border-gray-700 rounded p-2 text-sm text-gray-300 font-mono focus:border-blue-500 focus:ring-1 focus:ring-blue-500 outline-none transition-colors" rows="2" placeholder="https://...">${stock.links || ''}</textarea>
                                 ${linkButtons ? `<div class="mt-2 flex flex-wrap gap-2">${linkButtons}</div>` : ''}
                             </div>
@@ -491,7 +586,6 @@
                 listContainer.appendChild(card);
             });
 
-            // Update Total Stats
             const totalPl = totalVal - totalInvest;
             document.getElementById('total-investment').textContent = `¥${totalInvest.toLocaleString()}`;
             document.getElementById('total-value').textContent = `¥${totalVal.toLocaleString()}`;
@@ -535,7 +629,7 @@
             }).filter(s => s !== null);
 
             if (newStocks.length === 0) {
-                alert('銘柄を検出できませんでした。Markdownの表形式を確認してください。');
+                alert('銘柄を検出できませんでした。');
                 return;
             }
 
@@ -551,16 +645,7 @@
             const item = items.find(i => i.id === currentId);
             item.stocks[index][field] = value;
             saveToStorage();
-            
-            // Re-render only if necessary (typing in textarea shouldn't lose focus, but for now simple re-render to update stats/links)
-            // Ideally we should debounce or update DOM directly, but re-render is safer for state consistency
-            // To keep focus, we check if element is active. 
-            // Actually, for textarea, re-rendering will lose focus. 
-            // Let's optimize: if field is note or links, don't re-render immediately unless link preview update is needed.
-            // For simplicity in this v2, we re-render. User clicks out to save/update view.
             if (field === 'note' || field === 'links') {
-                // Do nothing UI wise, just saved. Render on blur? 
-                // Currently onchange fires on blur. So it is fine.
                 renderPortfolio(item); 
             } else {
                 renderPortfolio(item);
@@ -568,7 +653,7 @@
         }
 
         function removeStock(index) {
-            if(!confirm('この銘柄をリストから削除しますか？')) return;
+            if(!confirm('削除しますか？')) return;
             const item = items.find(i => i.id === currentId);
             item.stocks.splice(index, 1);
             saveToStorage();
