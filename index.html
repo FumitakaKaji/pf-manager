@@ -53,15 +53,22 @@
                 </button>
             </div>
 
-            <!-- Action Button -->
-            <div class="p-4 border-b border-gray-700">
-                <button onclick="createNew()" id="createBtn" class="w-full flex items-center justify-center gap-2 bg-blue-600 hover:bg-blue-500 text-white py-2 rounded-lg transition-colors text-sm font-bold shadow-lg shadow-blue-900/20">
-                    <i class="fa-solid fa-plus"></i> 新規作成
-                </button>
+            <!-- Action Button & List Container -->
+            <div id="sidebar-content" class="flex flex-col h-full overflow-hidden">
+                <div class="p-4 border-b border-gray-700 shrink-0">
+                    <button onclick="createNew()" id="createBtn" class="w-full flex items-center justify-center gap-2 bg-blue-600 hover:bg-blue-500 text-white py-2 rounded-lg transition-colors text-sm font-bold shadow-lg shadow-blue-900/20">
+                        <i class="fa-solid fa-plus"></i> 新規作成
+                    </button>
+                </div>
+                <!-- List -->
+                <div class="flex-1 overflow-y-auto p-2 space-y-1" id="itemList"></div>
+            </div>
+            
+            <!-- Empty state for Links tab sidebar -->
+            <div id="sidebar-links-msg" class="hidden flex-1 flex items-center justify-center text-gray-600 text-xs p-4 text-center">
+                リンク集はメイン画面で<br>直接編集できます
             </div>
 
-            <!-- List -->
-            <div class="flex-1 overflow-y-auto p-2 space-y-1" id="itemList"></div>
         </aside>
 
         <!-- Main Content -->
@@ -77,7 +84,7 @@
                     <button onclick="saveCurrentItem()" class="bg-blue-600 hover:bg-blue-500 text-white px-4 py-2 rounded-lg text-sm font-bold shadow-lg">
                         <i class="fa-regular fa-floppy-disk mr-1"></i> <span class="hidden sm:inline">保存</span>
                     </button>
-                    <button onclick="deleteCurrentItem()" class="bg-red-900/50 hover:bg-red-800 text-red-200 px-3 py-2 rounded-lg text-sm border border-red-900">
+                    <button onclick="deleteCurrentItem()" id="headerDeleteBtn" class="bg-red-900/50 hover:bg-red-800 text-red-200 px-3 py-2 rounded-lg text-sm border border-red-900">
                         <i class="fa-regular fa-trash-can"></i>
                     </button>
                 </div>
@@ -189,11 +196,6 @@
         document.addEventListener('DOMContentLoaded', () => {
             loadItems();
             
-            // Migration check
-            if (items.length > 0 && !items[0].stocks && !items[0].linkItems) {
-                // Ensure proper structure if upgrading from older version
-            }
-
             if (items.length === 0) {
                 createNewPrompt(); 
             } else {
@@ -221,13 +223,56 @@
             currentTab = tab;
             currentId = null;
             updateTabUI();
-            renderList();
+
+            // UI Elements Toggling
+            const sidebarContent = document.getElementById('sidebar-content');
+            const sidebarLinksMsg = document.getElementById('sidebar-links-msg');
+            const deleteBtn = document.getElementById('headerDeleteBtn');
+
+            if (tab === 'links') {
+                // Links Mode: Hide sidebar controls, auto-select "the" links item
+                sidebarContent.classList.add('hidden');
+                sidebarLinksMsg.classList.remove('hidden');
+                deleteBtn.classList.add('hidden'); // Disable deleting the collection itself
+                
+                ensureAndSelectLinks();
+            } else {
+                // Normal Mode
+                sidebarContent.classList.remove('hidden');
+                sidebarLinksMsg.classList.add('hidden');
+                deleteBtn.classList.remove('hidden');
+                
+                // Clear view until selection
+                document.getElementById('inputTitle').value = '';
+                document.getElementById('view-prompt').classList.add('hidden');
+                document.getElementById('view-portfolio').classList.add('hidden');
+                document.getElementById('view-links').classList.add('hidden');
+                
+                renderList();
+            }
+        }
+
+        function ensureAndSelectLinks() {
+            // Find existing links item
+            let linkItem = items.find(i => i.type === 'links');
             
-            // Clear editor view until selection
-            document.getElementById('inputTitle').value = '';
-            document.getElementById('view-prompt').classList.add('hidden');
-            document.getElementById('view-portfolio').classList.add('hidden');
-            document.getElementById('view-links').classList.add('hidden');
+            if (!linkItem) {
+                // Create default if not exists
+                linkItem = {
+                    id: 'global_links_item_' + Date.now(), 
+                    type: 'links',
+                    title: '参考リンク集',
+                    linkItems: [
+                        { title: '01_四季報オンライン', url: 'https://shikiho.toyokeizai.net/' },
+                        { title: '02_Yahoo!ファイナンス', url: 'https://finance.yahoo.co.jp/' }
+                    ],
+                    updatedAt: new Date().toISOString()
+                };
+                items.push(linkItem);
+                saveToStorage();
+            }
+            // Select it
+            selectItem(linkItem.id);
         }
 
         function updateTabUI() {
@@ -242,6 +287,8 @@
         }
 
         function renderList() {
+            if (currentTab === 'links') return; // Sidebar list is empty in Links mode
+
             const container = document.getElementById('itemList');
             container.innerHTML = '';
             
@@ -265,9 +312,6 @@
                 } else if (currentTab === 'portfolio') {
                     icon = '<i class="fa-solid fa-chart-pie"></i>';
                     colorClass = 'text-emerald-400';
-                } else {
-                    icon = '<i class="fa-solid fa-link"></i>';
-                    colorClass = 'text-indigo-400';
                 }
 
                 div.innerHTML = `
@@ -291,29 +335,29 @@
             document.getElementById('inputTitle').value = item.title;
             document.getElementById('lastUpdated').textContent = `Updated: ${new Date(item.updatedAt).toLocaleString()}`;
             
-            renderList(); // Update selection style
+            renderList(); // Update selection style in sidebar (if visible)
 
-            // Hide all views
+            // Hide all views first
             document.getElementById('view-prompt').classList.add('hidden');
             document.getElementById('view-portfolio').classList.add('hidden');
             document.getElementById('view-links').classList.add('hidden');
 
-            if (currentTab === 'prompt') {
+            if (item.type === 'prompt') {
                 document.getElementById('view-prompt').classList.remove('hidden');
                 document.getElementById('inputContent').value = item.content || '';
-            } else if (currentTab === 'portfolio') {
+            } else if (item.type === 'portfolio') {
                 document.getElementById('view-portfolio').classList.remove('hidden');
                 renderPortfolio(item);
-            } else {
+            } else if (item.type === 'links') {
                 document.getElementById('view-links').classList.remove('hidden');
                 renderLinks(item);
             }
         }
 
         function createNew() {
+            // Note: In Links mode, the sidebar Create button is hidden, so this won't be called for Links.
             if (currentTab === 'prompt') createNewPrompt();
             else if (currentTab === 'portfolio') createNewPortfolio();
-            else createNewLinks();
         }
 
         function createNewPrompt() {
@@ -339,21 +383,6 @@
             items.unshift(newItem);
             saveAndSelect(newItem);
         }
-
-        function createNewLinks() {
-            const newItem = {
-                id: Date.now().toString(),
-                type: 'links',
-                title: '新規リンク集',
-                linkItems: [
-                    { title: '四季報オンライン', url: 'https://shikiho.toyokeizai.net/' },
-                    { title: 'Yahoo!ファイナンス', url: 'https://finance.yahoo.co.jp/' }
-                ],
-                updatedAt: new Date().toISOString()
-            };
-            items.unshift(newItem);
-            saveAndSelect(newItem);
-        }
         
         function saveAndSelect(item) {
             saveToStorage();
@@ -368,23 +397,30 @@
             item.title = document.getElementById('inputTitle').value;
             item.updatedAt = new Date().toISOString();
 
-            if (currentTab === 'prompt') {
+            if (item.type === 'prompt') {
                 item.content = document.getElementById('inputContent').value;
             } else {
                 // Portfolio and Links data are saved in real-time on input change
             }
 
-            // Re-order to top
-            items = items.filter(i => i.id !== currentId);
-            items.unshift(item);
+            // Re-order to top if it's in a list
+            if (item.type !== 'links') {
+                items = items.filter(i => i.id !== currentId);
+                items.unshift(item);
+            }
             
             saveToStorage();
-            renderList();
+            if (currentTab !== 'links') renderList();
             showToast('保存しました');
         }
 
         function deleteCurrentItem() {
             if (!currentId || !confirm('削除しますか？')) return;
+            
+            // Should not happen in Links mode due to button hiding, but safety check
+            const item = items.find(i => i.id === currentId);
+            if (item && item.type === 'links') return;
+
             items = items.filter(i => i.id !== currentId);
             saveToStorage();
             currentId = null;
@@ -403,6 +439,16 @@
             container.innerHTML = '';
             
             if (!item.linkItems) item.linkItems = [];
+
+            // --- Sorting Logic Added ---
+            item.linkItems.sort((a, b) => {
+                const tA = (a.title || '').toString().toLowerCase();
+                const tB = (b.title || '').toString().toLowerCase();
+                return tA.localeCompare(tB, 'ja');
+            });
+            // Save sort order
+            saveToStorage();
+            // ---------------------------
 
             if (item.linkItems.length === 0) {
                 container.innerHTML = '<div class="text-gray-500 text-center p-8">リンクがありません。<br>"リンクを追加"ボタンを押してください。</div>';
