@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Gemini 3.0 Pro: Portfolio Manager</title>
+    <title>Gemini Portfolio Manager (Cloud)</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
     <style>
@@ -15,12 +15,28 @@
         .tab-active { border-bottom: 2px solid #3b82f6; color: #60a5fa; background: rgba(31, 41, 55, 0.5); }
         .tab-inactive { color: #9ca3af; }
         .tab-inactive:hover { color: #e5e7eb; background: rgba(31, 41, 55, 0.3); }
-        /* Smooth details transition attempt */
         details > summary { list-style: none; }
         details > summary::-webkit-details-marker { display: none; }
     </style>
 </head>
 <body class="bg-gray-900 text-gray-200 h-screen flex flex-col overflow-hidden">
+
+    <!-- Login Overlay -->
+    <div id="login-overlay" class="fixed inset-0 z-50 bg-gray-900 flex flex-col items-center justify-center p-4">
+        <div class="max-w-md w-full bg-gray-800 p-8 rounded-xl shadow-2xl border border-gray-700 text-center space-y-6">
+            <div class="w-20 h-20 bg-gray-700 rounded-full flex items-center justify-center mx-auto text-blue-400 text-4xl mb-4">
+                <i class="fa-solid fa-cloud"></i>
+            </div>
+            <h1 class="text-2xl font-bold text-white">Gemini Portfolio Manager</h1>
+            <p class="text-gray-400">Googleアカウントでログインして、<br>どの端末からでもデータを同期します。</p>
+            
+            <button id="google-login-btn" class="w-full bg-white hover:bg-gray-100 text-gray-800 font-bold py-3 px-4 rounded-lg flex items-center justify-center gap-3 transition-colors">
+                <img src="https://www.gstatic.com/firebasejs/ui/2.0.0/images/auth/google.svg" class="w-6 h-6">
+                Googleでログイン
+            </button>
+            <p id="login-status" class="text-xs text-gray-500 min-h-[1rem]"></p>
+        </div>
+    </div>
 
     <!-- Header -->
     <header class="bg-gray-800 border-b border-gray-700 h-16 flex items-center justify-between px-6 shrink-0 z-20 shadow-md">
@@ -30,8 +46,21 @@
                 Gemini Portfolio Manager
             </h1>
         </div>
-        <div class="text-xs text-gray-500 hidden md:block">
-            Browser Local Storage
+        
+        <!-- User Profile & Data Controls -->
+        <div class="flex items-center gap-4">
+            <div id="sync-status" class="text-xs text-gray-500 flex items-center gap-1">
+                <i class="fa-solid fa-check"></i> Synced
+            </div>
+            
+            <div class="h-6 w-px bg-gray-700"></div>
+
+            <div class="flex items-center gap-3">
+                <img id="user-photo" src="" class="w-8 h-8 rounded-full border border-gray-600 hidden">
+                <button onclick="logout()" class="text-xs text-gray-400 hover:text-white transition-colors" title="ログアウト">
+                    <i class="fa-solid fa-right-from-bracket"></i>
+                </button>
+            </div>
         </div>
     </header>
 
@@ -42,13 +71,13 @@
         <aside class="w-80 bg-gray-850 border-r border-gray-700 flex flex-col shrink-0 z-10">
             <!-- Tab Switcher -->
             <div class="flex border-b border-gray-700 bg-gray-800">
-                <button onclick="switchTab('prompt')" id="tab-prompt" class="flex-1 py-3 text-xs md:text-sm font-bold transition-colors tab-active" title="Prompts">
+                <button onclick="switchTab('prompt')" id="tab-prompt" class="flex-1 py-3 text-xs md:text-sm font-bold transition-colors tab-active">
                     <i class="fa-solid fa-code mr-1"></i> <span class="hidden sm:inline">Prompts</span>
                 </button>
-                <button onclick="switchTab('portfolio')" id="tab-portfolio" class="flex-1 py-3 text-xs md:text-sm font-bold transition-colors tab-inactive" title="Portfolios">
+                <button onclick="switchTab('portfolio')" id="tab-portfolio" class="flex-1 py-3 text-xs md:text-sm font-bold transition-colors tab-inactive">
                     <i class="fa-solid fa-briefcase mr-1"></i> <span class="hidden sm:inline">Portfolios</span>
                 </button>
-                <button onclick="switchTab('links')" id="tab-links" class="flex-1 py-3 text-xs md:text-sm font-bold transition-colors tab-inactive" title="Links">
+                <button onclick="switchTab('links')" id="tab-links" class="flex-1 py-3 text-xs md:text-sm font-bold transition-colors tab-inactive">
                     <i class="fa-solid fa-link mr-1"></i> <span class="hidden sm:inline">Links</span>
                 </button>
             </div>
@@ -60,7 +89,6 @@
                         <i class="fa-solid fa-plus"></i> 新規作成
                     </button>
                 </div>
-                <!-- List -->
                 <div class="flex-1 overflow-y-auto p-2 space-y-1" id="itemList"></div>
             </div>
             
@@ -68,7 +96,6 @@
             <div id="sidebar-links-msg" class="hidden flex-1 flex items-center justify-center text-gray-600 text-xs p-4 text-center">
                 リンク集はメイン画面で<br>直接編集できます
             </div>
-
         </aside>
 
         <!-- Main Content -->
@@ -92,7 +119,6 @@
 
             <!-- Content Area Switcher -->
             <div class="flex-1 relative overflow-hidden">
-                
                 <!-- 1. Prompt Editor View -->
                 <div id="view-prompt" class="absolute inset-0 flex flex-col hidden">
                     <div class="flex justify-end p-2 bg-gray-800/30">
@@ -105,50 +131,23 @@
 
                 <!-- 2. Portfolio View -->
                 <div id="view-portfolio" class="absolute inset-0 flex flex-col hidden overflow-hidden">
-                    
-                    <!-- Import Section (Show if empty) -->
                     <div id="portfolio-importer" class="hidden absolute inset-0 z-20 bg-gray-900 p-8 flex flex-col items-center justify-center">
                         <div class="max-w-2xl w-full space-y-4 text-center">
-                            <div class="w-16 h-16 bg-gray-800 rounded-full flex items-center justify-center mx-auto text-emerald-500 text-2xl mb-4">
-                                <i class="fa-solid fa-file-import"></i>
-                            </div>
                             <h3 class="text-xl font-bold text-white">Geminiの分析結果を取り込む</h3>
-                            <p class="text-gray-400 text-sm">Geminiが出力したマークダウンの表（推奨ポートフォリオ）をここに貼り付けてください。<br>自動的に銘柄を解析してリスト化します。</p>
-                            <textarea id="importText" class="w-full h-48 bg-gray-800 border border-gray-700 rounded-lg p-4 text-sm font-mono focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 outline-none transition-colors" placeholder="| 順位 | コード | 銘柄名 | 現在株価 | ..."></textarea>
-                            <button onclick="importPortfolio()" class="w-full bg-emerald-600 hover:bg-emerald-500 text-white py-3 rounded-lg font-bold shadow-lg transition-colors">
-                                解析して登録
-                            </button>
+                            <textarea id="importText" class="w-full h-48 bg-gray-800 border border-gray-700 rounded-lg p-4 text-sm font-mono focus:border-emerald-500 focus:ring-1 outline-none" placeholder="| 順位 | コード | ..."></textarea>
+                            <button onclick="importPortfolio()" class="w-full bg-emerald-600 hover:bg-emerald-500 text-white py-3 rounded-lg font-bold">解析して登録</button>
+                            <button onclick="hideImportModal()" class="text-gray-500 text-xs hover:text-white mt-2">キャンセル</button>
                         </div>
                     </div>
-
-                    <!-- Portfolio Dashboard -->
                     <div id="portfolio-dashboard" class="flex-1 flex flex-col h-full overflow-hidden">
-                        <!-- Stats Bar -->
                         <div class="bg-gray-800 border-b border-gray-700 p-4 flex gap-6 text-sm shrink-0">
-                            <div>
-                                <span class="text-gray-500 block text-xs uppercase">投資総額</span>
-                                <span class="font-bold text-lg" id="total-investment">¥0</span>
-                            </div>
-                            <div>
-                                <span class="text-gray-500 block text-xs uppercase">現在評価額 (売却含)</span>
-                                <span class="font-bold text-lg" id="total-value">¥0</span>
-                            </div>
-                            <div>
-                                <span class="text-gray-500 block text-xs uppercase">損益合計</span>
-                                <span class="font-bold text-lg" id="total-pl">¥0</span>
-                            </div>
+                            <div><span class="text-gray-500 block text-xs uppercase">投資総額</span><span class="font-bold text-lg" id="total-investment">¥0</span></div>
+                            <div><span class="text-gray-500 block text-xs uppercase">現在評価額</span><span class="font-bold text-lg" id="total-value">¥0</span></div>
+                            <div><span class="text-gray-500 block text-xs uppercase">損益合計</span><span class="font-bold text-lg" id="total-pl">¥0</span></div>
                         </div>
-
-                        <!-- Stock List -->
-                        <div class="flex-1 overflow-y-auto p-4 space-y-4 bg-gray-900/50" id="stock-list">
-                            <!-- Stock Cards injected here -->
-                        </div>
-                        
-                        <!-- Add manual stock button -->
-                         <div class="p-2 bg-gray-800 border-t border-gray-700 text-center">
-                             <button onclick="showImportModal()" class="text-xs text-blue-400 hover:text-blue-300">
-                                 <i class="fa-solid fa-plus mr-1"></i> Geminiの結果を追加で取り込む
-                             </button>
+                        <div class="flex-1 overflow-y-auto p-4 space-y-4 bg-gray-900/50" id="stock-list"></div>
+                        <div class="p-2 bg-gray-800 border-t border-gray-700 text-center">
+                             <button onclick="showImportModal()" class="text-xs text-blue-400 hover:text-blue-300"><i class="fa-solid fa-plus mr-1"></i> Geminiの結果を追加で取り込む</button>
                          </div>
                     </div>
                 </div>
@@ -156,15 +155,10 @@
                 <!-- 3. Links View -->
                 <div id="view-links" class="absolute inset-0 flex flex-col hidden overflow-hidden">
                     <div class="p-4 border-b border-gray-700 bg-gray-800 flex justify-end">
-                        <button onclick="addNewLinkRow()" class="flex items-center gap-2 bg-indigo-600 hover:bg-indigo-500 text-white px-4 py-2 rounded-lg text-sm font-bold shadow-lg transition-colors">
-                            <i class="fa-solid fa-plus"></i> リンクを追加
-                        </button>
+                        <button onclick="addNewLinkRow()" class="flex items-center gap-2 bg-indigo-600 hover:bg-indigo-500 text-white px-4 py-2 rounded-lg text-sm font-bold shadow-lg transition-colors"><i class="fa-solid fa-plus"></i> リンクを追加</button>
                     </div>
-                    <div id="links-list" class="flex-1 overflow-y-auto p-4 space-y-3 bg-gray-900">
-                        <!-- Link Items injected here -->
-                    </div>
+                    <div id="links-list" class="flex-1 overflow-y-auto p-4 space-y-3 bg-gray-900"></div>
                 </div>
-
             </div>
         </main>
     </div>
@@ -175,9 +169,167 @@
         <span id="toastMsg">Saved</span>
     </div>
 
+    <!-- Firebase SDKs -->
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
+        import { getAuth, signInWithPopup, GoogleAuthProvider, signOut, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+        import { getFirestore, doc, getDoc, setDoc } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+
+        // ==========================================
+        // ↓↓↓ ここをあなたのFirebaseConfigに書き換える ↓↓↓
+        const firebaseConfig = {
+            apiKey: "AIzaSyDcvic5djCvqY0S1sf8ubefGBw4xLUpc58",
+  authDomain: "gemini-portfolio-app.firebaseapp.com",
+  projectId: "gemini-portfolio-app",
+  storageBucket: "gemini-portfolio-app.firebasestorage.app",
+  messagingSenderId: "118037184309",
+  appId: "1:118037184309:web:82c694063b880aef68567c",
+  measurementId: "G-14R42BY9B9"
+        };
+        // ↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑
+        // ==========================================
+
+        // Initialize Firebase
+        const app = initializeApp(firebaseConfig);
+        const auth = getAuth(app);
+        const db = getFirestore(app);
+        
+        let currentUser = null;
+
+        // Expose functions to global scope for HTML onclick attributes
+        window.login = async () => {
+            const provider = new GoogleAuthProvider();
+            try {
+                await signInWithPopup(auth, provider);
+            } catch (error) {
+                console.error("Login failed", error);
+                alert("ログインに失敗しました: " + error.message);
+            }
+        };
+
+        window.logout = () => {
+            signOut(auth);
+        };
+
+        // UI Binding for login button
+        document.getElementById('google-login-btn').addEventListener('click', window.login);
+
+        // Auth State Observer
+        onAuthStateChanged(auth, async (user) => {
+            if (user) {
+                currentUser = user;
+                document.getElementById('login-overlay').classList.add('hidden');
+                document.getElementById('user-photo').src = user.photoURL;
+                document.getElementById('user-photo').classList.remove('hidden');
+                
+                // Load data from Cloud
+                await loadDataFromCloud();
+                
+            } else {
+                currentUser = null;
+                document.getElementById('login-overlay').classList.remove('hidden');
+                document.getElementById('user-photo').classList.add('hidden');
+                // Clear UI
+                window.items = [];
+                window.renderList();
+            }
+        });
+
+        // --- Data Logic (Cloud Wrapper) ---
+        // We use a global variable 'items' to keep app logic similar to previous version
+        // But we sync this 'items' with Firestore document: users/{uid}/appData/v1
+        
+        window.items = [];
+        let isSyncing = false;
+
+        async function loadDataFromCloud() {
+            if (!currentUser) return;
+            setSyncStatus('Loading...');
+            
+            try {
+                const docRef = doc(db, "users", currentUser.uid, "appData", "v1");
+                const docSnap = await getDoc(docRef);
+
+                if (docSnap.exists()) {
+                    window.items = JSON.parse(docSnap.data().json);
+                    console.log("Data loaded from cloud");
+                } else {
+                    console.log("No cloud data found. Using empty or migrating local?");
+                    // Optional: Check local storage for migration
+                    const localData = localStorage.getItem('gemini_portfolio_manager_v3');
+                    if (localData) {
+                        if(confirm('ローカルに保存されたデータが見つかりました。これをクラウドに移行しますか？')){
+                            window.items = JSON.parse(localData);
+                            await saveDataToCloud(); // Save immediately
+                        }
+                    }
+                    if (window.items.length === 0) {
+                        window.createNewPrompt(); // Init default
+                    }
+                }
+                window.renderAppInitialState();
+            } catch (e) {
+                console.error("Error loading data:", e);
+                alert("データの読み込みに失敗しました。");
+            } finally {
+                setSyncStatus('Synced');
+            }
+        }
+
+        window.saveDataToCloud = async () => {
+            if (!currentUser) return;
+            if (isSyncing) return;
+            
+            isSyncing = true;
+            setSyncStatus('Saving...');
+            
+            try {
+                const dataStr = JSON.stringify(window.items);
+                const docRef = doc(db, "users", currentUser.uid, "appData", "v1");
+                
+                await setDoc(docRef, { 
+                    json: dataStr,
+                    updatedAt: new Date().toISOString()
+                });
+                
+                setSyncStatus('Synced');
+                window.showToast('Cloud Saved');
+            } catch (e) {
+                console.error("Error saving data:", e);
+                setSyncStatus('Error');
+            } finally {
+                isSyncing = false;
+            }
+        };
+
+        function setSyncStatus(status) {
+            const el = document.getElementById('sync-status');
+            if (status === 'Synced') {
+                el.innerHTML = '<i class="fa-solid fa-check text-emerald-500"></i> Cloud Synced';
+            } else if (status === 'Saving...') {
+                el.innerHTML = '<i class="fa-solid fa-circle-notch fa-spin text-blue-500"></i> Saving...';
+            } else if (status === 'Loading...') {
+                el.innerHTML = '<i class="fa-solid fa-circle-notch fa-spin text-gray-500"></i> Loading...';
+            } else {
+                 el.innerHTML = '<i class="fa-solid fa-triangle-exclamation text-red-500"></i> ' + status;
+            }
+        }
+
+        // --- Expose App Logic ---
+        // The original app logic needs to call saveDataToCloud instead of saveToStorage
+        // We override the saveToStorage function in the global scope below.
+        
+        // Load initial App Logic scripts after modules are ready
+        const script = document.createElement('script');
+        script.textContent = appLogicCode;
+        document.body.appendChild(script);
+
+    </script>
+
     <script>
-        // --- Configuration & Default Data ---
-        const STORAGE_KEY = 'gemini_portfolio_manager_v3';
+        // --- Core Application Logic (Adapted for Cloud) ---
+        // This runs in global scope but calls window.saveDataToCloud defined in module
+        
         const DEFAULT_PROMPT = `# Role: Senior Deep Value Analyst (Japan Equity Specialist)
 ## Task Definition
 ユーザーから提供された日本株銘柄リストに対し、清原達郎氏の投資哲学に基づく分析を実行せよ。
@@ -186,37 +338,33 @@
 以下のMarkdownテーブル形式で出力すること:
 | 順位 | コード | 銘柄名 | 現在株価 | 目標株価 | ...
 `;
-
-        // --- State ---
-        let items = [];
-        let currentTab = 'prompt'; // 'prompt' | 'portfolio' | 'links'
+        let currentTab = 'prompt';
         let currentId = null;
 
-        // --- Initialization ---
-        document.addEventListener('DOMContentLoaded', () => {
-            loadItems();
-            
-            if (items.length === 0) {
-                createNewPrompt(); 
+        // Called after data load
+        window.renderAppInitialState = () => {
+            if (window.items.length === 0) {
+                 createNewPrompt();
             } else {
-                const first = items.find(i => i.type === 'prompt') || items[0];
-                if(first) {
-                    currentTab = first.type;
-                    updateTabUI();
-                    selectItem(first.id);
-                }
+                 // Check if links exist
+                 let linkItem = window.items.find(i => i.type === 'links');
+                 if (!linkItem) ensureAndSelectLinks(); // Ensure logic
+
+                 const first = window.items.find(i => i.type === 'prompt') || window.items[0];
+                 if(first) {
+                     currentTab = first.type;
+                     updateTabUI();
+                     selectItem(first.id);
+                 }
             }
             renderList();
-        });
+        };
 
-        // --- Core Functions ---
-        function loadItems() {
-            const stored = localStorage.getItem(STORAGE_KEY);
-            if (stored) items = JSON.parse(stored);
-        }
-
+        // Replaces local storage save
         function saveToStorage() {
-            localStorage.setItem(STORAGE_KEY, JSON.stringify(items));
+             if (window.saveDataToCloud) {
+                 window.saveDataToCloud();
+             }
         }
 
         function switchTab(tab) {
@@ -224,25 +372,20 @@
             currentId = null;
             updateTabUI();
 
-            // UI Elements Toggling
             const sidebarContent = document.getElementById('sidebar-content');
             const sidebarLinksMsg = document.getElementById('sidebar-links-msg');
             const deleteBtn = document.getElementById('headerDeleteBtn');
 
             if (tab === 'links') {
-                // Links Mode: Hide sidebar controls, auto-select "the" links item
                 sidebarContent.classList.add('hidden');
                 sidebarLinksMsg.classList.remove('hidden');
-                deleteBtn.classList.add('hidden'); // Disable deleting the collection itself
-                
+                deleteBtn.classList.add('hidden');
                 ensureAndSelectLinks();
             } else {
-                // Normal Mode
                 sidebarContent.classList.remove('hidden');
                 sidebarLinksMsg.classList.add('hidden');
                 deleteBtn.classList.remove('hidden');
                 
-                // Clear view until selection
                 document.getElementById('inputTitle').value = '';
                 document.getElementById('view-prompt').classList.add('hidden');
                 document.getElementById('view-portfolio').classList.add('hidden');
@@ -253,11 +396,8 @@
         }
 
         function ensureAndSelectLinks() {
-            // Find existing links item
-            let linkItem = items.find(i => i.type === 'links');
-            
+            let linkItem = window.items.find(i => i.type === 'links');
             if (!linkItem) {
-                // Create default if not exists
                 linkItem = {
                     id: 'global_links_item_' + Date.now(), 
                     type: 'links',
@@ -268,10 +408,9 @@
                     ],
                     updatedAt: new Date().toISOString()
                 };
-                items.push(linkItem);
+                window.items.push(linkItem);
                 saveToStorage();
             }
-            // Select it
             selectItem(linkItem.id);
         }
 
@@ -287,12 +426,11 @@
         }
 
         function renderList() {
-            if (currentTab === 'links') return; // Sidebar list is empty in Links mode
-
+            if (currentTab === 'links') return;
             const container = document.getElementById('itemList');
             container.innerHTML = '';
             
-            const filtered = items.filter(i => i.type === currentTab)
+            const filtered = window.items.filter(i => i.type === currentTab)
                 .sort((a, b) => new Date(b.updatedAt) - new Date(a.updatedAt));
 
             filtered.forEach(item => {
@@ -305,14 +443,8 @@
 
                 let icon = '';
                 let colorClass = '';
-                
-                if (currentTab === 'prompt') {
-                    icon = '<i class="fa-solid fa-file-code"></i>';
-                    colorClass = 'text-blue-400';
-                } else if (currentTab === 'portfolio') {
-                    icon = '<i class="fa-solid fa-chart-pie"></i>';
-                    colorClass = 'text-emerald-400';
-                }
+                if (currentTab === 'prompt') { icon = '<i class="fa-solid fa-file-code"></i>'; colorClass = 'text-blue-400'; }
+                else if (currentTab === 'portfolio') { icon = '<i class="fa-solid fa-chart-pie"></i>'; colorClass = 'text-emerald-400'; }
 
                 div.innerHTML = `
                     <div class="flex items-center gap-3">
@@ -329,15 +461,14 @@
 
         function selectItem(id) {
             currentId = id;
-            const item = items.find(i => i.id === id);
+            const item = window.items.find(i => i.id === id);
             if (!item) return;
 
             document.getElementById('inputTitle').value = item.title;
             document.getElementById('lastUpdated').textContent = `Updated: ${new Date(item.updatedAt).toLocaleString()}`;
             
-            renderList(); // Update selection style in sidebar (if visible)
+            renderList();
 
-            // Hide all views first
             document.getElementById('view-prompt').classList.add('hidden');
             document.getElementById('view-portfolio').classList.add('hidden');
             document.getElementById('view-links').classList.add('hidden');
@@ -355,7 +486,6 @@
         }
 
         function createNew() {
-            // Note: In Links mode, the sidebar Create button is hidden, so this won't be called for Links.
             if (currentTab === 'prompt') createNewPrompt();
             else if (currentTab === 'portfolio') createNewPortfolio();
         }
@@ -368,7 +498,7 @@
                 content: DEFAULT_PROMPT,
                 updatedAt: new Date().toISOString()
             };
-            items.unshift(newItem);
+            window.items.unshift(newItem);
             saveAndSelect(newItem);
         }
 
@@ -380,7 +510,7 @@
                 stocks: [],
                 updatedAt: new Date().toISOString()
             };
-            items.unshift(newItem);
+            window.items.unshift(newItem);
             saveAndSelect(newItem);
         }
         
@@ -392,41 +522,35 @@
 
         function saveCurrentItem() {
             if (!currentId) return;
-            const item = items.find(i => i.id === currentId);
+            const item = window.items.find(i => i.id === currentId);
             
             item.title = document.getElementById('inputTitle').value;
             item.updatedAt = new Date().toISOString();
 
             if (item.type === 'prompt') {
                 item.content = document.getElementById('inputContent').value;
-            } else {
-                // Portfolio and Links data are saved in real-time on input change
             }
 
-            // Re-order to top if it's in a list
             if (item.type !== 'links') {
-                items = items.filter(i => i.id !== currentId);
-                items.unshift(item);
+                window.items = window.items.filter(i => i.id !== currentId);
+                window.items.unshift(item);
             }
             
             saveToStorage();
             if (currentTab !== 'links') renderList();
-            showToast('保存しました');
+            // Toast shown by cloud wrapper
         }
 
         function deleteCurrentItem() {
             if (!currentId || !confirm('削除しますか？')) return;
-            
-            // Should not happen in Links mode due to button hiding, but safety check
-            const item = items.find(i => i.id === currentId);
+            const item = window.items.find(i => i.id === currentId);
             if (item && item.type === 'links') return;
 
-            items = items.filter(i => i.id !== currentId);
+            window.items = window.items.filter(i => i.id !== currentId);
             saveToStorage();
             currentId = null;
             renderList();
             
-            // Clear view
             document.getElementById('inputTitle').value = '';
             document.getElementById('view-prompt').classList.add('hidden');
             document.getElementById('view-portfolio').classList.add('hidden');
@@ -440,15 +564,11 @@
             
             if (!item.linkItems) item.linkItems = [];
 
-            // --- Sorting Logic Added ---
             item.linkItems.sort((a, b) => {
                 const tA = (a.title || '').toString().toLowerCase();
                 const tB = (b.title || '').toString().toLowerCase();
                 return tA.localeCompare(tB, 'ja');
             });
-            // Save sort order
-            saveToStorage();
-            // ---------------------------
 
             if (item.linkItems.length === 0) {
                 container.innerHTML = '<div class="text-gray-500 text-center p-8">リンクがありません。<br>"リンクを追加"ボタンを押してください。</div>';
@@ -460,7 +580,7 @@
                 div.className = 'bg-gray-800 p-3 rounded-lg flex gap-3 items-center group';
                 div.innerHTML = `
                     <div class="flex-1 space-y-2">
-                        <input type="text" value="${link.title || ''}" onchange="updateLinkItem(${index}, 'title', this.value)" class="w-full bg-transparent text-white font-bold placeholder-gray-600 focus:outline-none focus:border-b border-gray-600" placeholder="サイト名">
+                        <input type="text" value="${link.title || ''}" onchange="updateLinkItem(${index}, 'title', this.value)" class="w-full bg-transparent text-white font-bold placeholder-gray-600 focus:outline-none focus:border-b border-gray-600" placeholder="サイト名 (例: 01_Yahoo)">
                         <input type="text" value="${link.url || ''}" onchange="updateLinkItem(${index}, 'url', this.value)" class="w-full bg-transparent text-sm text-blue-300 font-mono placeholder-gray-600 focus:outline-none focus:border-b border-gray-600" placeholder="https://...">
                     </div>
                     <div class="flex gap-2">
@@ -477,7 +597,7 @@
         }
 
         function addNewLinkRow() {
-            const item = items.find(i => i.id === currentId);
+            const item = window.items.find(i => i.id === currentId);
             if (!item.linkItems) item.linkItems = [];
             item.linkItems.push({ title: '', url: '' });
             saveToStorage();
@@ -485,22 +605,20 @@
         }
 
         function updateLinkItem(index, field, value) {
-            const item = items.find(i => i.id === currentId);
+            const item = window.items.find(i => i.id === currentId);
             item.linkItems[index][field] = value;
             saveToStorage();
-            // Don't re-render entire list to keep focus
         }
 
         function removeLinkItem(index) {
             if (!confirm('リンクを削除しますか？')) return;
-            const item = items.find(i => i.id === currentId);
+            const item = window.items.find(i => i.id === currentId);
             item.linkItems.splice(index, 1);
             saveToStorage();
             renderLinks(item);
         }
 
-        // --- Portfolio Logic (Previous) ---
-
+        // --- Portfolio Logic ---
         function generateLinkButtons(text) {
             if (!text) return '';
             const urlRegex = /(https?:\/\/[^\s\n]+)/g;
@@ -646,6 +764,15 @@
             document.getElementById('portfolio-importer').classList.remove('hidden');
         }
 
+        function hideImportModal() {
+            // If stocks exist, go back to dashboard, else stay (or could go empty)
+            const item = window.items.find(i => i.id === currentId);
+            if (item && item.stocks && item.stocks.length > 0) {
+                 document.getElementById('portfolio-importer').classList.add('hidden');
+                 document.getElementById('portfolio-dashboard').classList.remove('hidden');
+            }
+        }
+
         function importPortfolio() {
             const text = document.getElementById('importText').value;
             if (!text.trim()) return;
@@ -679,7 +806,7 @@
                 return;
             }
 
-            const item = items.find(i => i.id === currentId);
+            const item = window.items.find(i => i.id === currentId);
             if (!item.stocks) item.stocks = [];
             item.stocks = [...item.stocks, ...newStocks];
             
@@ -688,7 +815,7 @@
         }
 
         function updateStock(index, field, value) {
-            const item = items.find(i => i.id === currentId);
+            const item = window.items.find(i => i.id === currentId);
             item.stocks[index][field] = value;
             saveToStorage();
             if (field === 'note' || field === 'links') {
@@ -700,7 +827,7 @@
 
         function removeStock(index) {
             if(!confirm('削除しますか？')) return;
-            const item = items.find(i => i.id === currentId);
+            const item = window.items.find(i => i.id === currentId);
             item.stocks.splice(index, 1);
             saveToStorage();
             renderPortfolio(item);
@@ -717,7 +844,12 @@
             navigator.clipboard.writeText(document.getElementById('inputContent').value)
                 .then(() => showToast('Copied'));
         }
-
+        
+        // This is a placeholder for the logic code that is loaded dynamically
+        const appLogicCode = `
+            // Logic is already embedded above for simplicity in this single-file solution
+            console.log("App Logic Loaded");
+        `;
     </script>
 </body>
 </html>
